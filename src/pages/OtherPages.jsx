@@ -331,34 +331,186 @@ export function Reports() {
 // ── TEAM ─────────────────────────────────────────────
 export function Team() {
   const { user } = useAuth();
+  const { authFetch } = useApp();
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState({ email: '', password: '', role: 'admin' });
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+
+  React.useEffect(() => {
+    authFetch('/api/auth/users')
+      .then(r => r.json())
+      .then(data => { setUsers(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [authFetch]);
+
+  const handleAdd = async () => {
+    setError('');
+    if (!form.email.trim() || !form.password.trim()) {
+      setError('Email and password are required.');
+      return;
+    }
+    if (form.password.length < 6) {
+      setError('Password must be at least 6 characters.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await authFetch('/api/auth/register', {
+        method: 'POST',
+        body: JSON.stringify(form),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to add member');
+      }
+      const newUser = await res.json();
+      setUsers(prev => [...prev, newUser]);
+      setShowAdd(false);
+      setForm({ email: '', password: '', role: 'admin' });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    try {
+      const res = await authFetch(`/api/auth/users/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to remove member');
+      }
+      setUsers(prev => prev.filter(u => u.id !== id));
+      setDeleteConfirm(null);
+    } catch (err) {
+      alert(err.message);
+      setDeleteConfirm(null);
+    }
+  };
+
+  const ROLE_LABELS = {
+    admin: { label: 'Admin', cls: 'tier-amp' },
+    client: { label: 'Client', cls: 'tier-ess' },
+  };
+
   return (
     <div className="page-content">
       <div className="section-header">
         <div className="section-title">Team</div>
+        <button className="btn" onClick={() => setShowAdd(true)}>+ Add Member</button>
       </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 18 }}>
+        <div className="stat-card"><div className="stat-label">Total Members</div><div className="stat-value">{users.length}</div></div>
+        <div className="stat-card"><div className="stat-label">Admins</div><div className="stat-value">{users.filter(u => u.role === 'admin').length}</div></div>
+        <div className="stat-card"><div className="stat-label">Client Logins</div><div className="stat-value">{users.filter(u => u.role === 'client').length}</div></div>
+      </div>
+
       <div className="table-wrap">
         <table>
           <thead>
             <tr>
-              <th style={{ width: '30%' }}>Name</th>
               <th style={{ width: '35%' }}>Email</th>
-              <th style={{ width: '20%' }}>Role</th>
+              <th style={{ width: '15%' }}>Role</th>
+              <th style={{ width: '20%' }}>Created</th>
               <th style={{ width: '15%' }}>Status</th>
+              <th style={{ width: '15%' }}></th>
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td style={{ fontWeight: 700 }}>Admin</td>
-              <td>{user?.email || 'admin@gobenotable.com'}</td>
-              <td><span className="tier-tag tier-amp">Owner</span></td>
-              <td><span className="status-pill pill-active">Active</span></td>
-            </tr>
+            {loading ? (
+              <tr><td colSpan={5} style={{ textAlign: 'center', padding: '24px 0', color: '#aaa' }}>Loading...</td></tr>
+            ) : users.length === 0 ? (
+              <tr><td colSpan={5} style={{ textAlign: 'center', padding: '24px 0', color: '#aaa' }}>No team members found.</td></tr>
+            ) : (
+              users.map(u => {
+                const role = ROLE_LABELS[u.role] || ROLE_LABELS.client;
+                const isYou = u.id === user?.id;
+                return (
+                  <tr key={u.id}>
+                    <td style={{ fontWeight: 700 }}>
+                      {u.email}
+                      {isYou && <span style={{ fontSize: 9, color: '#888', marginLeft: 6 }}>(you)</span>}
+                    </td>
+                    <td><span className={`tier-tag ${role.cls}`}>{role.label}</span></td>
+                    <td style={{ color: 'var(--mauve)', fontSize: 11 }}>{new Date(u.createdAt).toLocaleDateString()}</td>
+                    <td><span className="status-pill pill-active">Active</span></td>
+                    <td>
+                      {!isYou && (
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          style={{ color: '#c0392b', fontSize: 9 }}
+                          onClick={() => setDeleteConfirm(u)}
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
       </div>
-      <div style={{ marginTop: 16, padding: '14px 16px', background: 'var(--white)', border: '0.5px solid var(--border)', fontSize: 12, color: 'var(--mauve)', lineHeight: 1.7 }}>
-        Team member invites and role-based permissions are planned for Phase 2.
-      </div>
+
+      {/* Add Member Modal */}
+      {showAdd && (
+        <div className="modal-backdrop" onClick={() => setShowAdd(false)}>
+          <div className="modal" style={{ maxWidth: 400 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <span className="modal-title">Add Team Member</span>
+              <button className="modal-close" onClick={() => setShowAdd(false)}>x</button>
+            </div>
+            <div className="modal-body">
+              {error && <div style={{ color: '#c0392b', fontSize: 11, marginBottom: 12 }}>{error}</div>}
+              <div className="form-group">
+                <label className="form-label">Email</label>
+                <input className="form-input" type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="team@gobenotable.com" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Password</label>
+                <input className="form-input" type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="Min 6 characters" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Role</label>
+                <select className="form-input" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
+                  <option value="admin">Admin (full access)</option>
+                  <option value="client">Client (restricted)</option>
+                </select>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowAdd(false)}>Cancel</button>
+              <button className="btn btn-sm" onClick={handleAdd} disabled={saving}>{saving ? 'Adding...' : 'Add Member'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirm Modal */}
+      {deleteConfirm && (
+        <div className="modal-backdrop" onClick={() => setDeleteConfirm(null)}>
+          <div className="modal" style={{ maxWidth: 360 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <span className="modal-title">Remove Member</span>
+              <button className="modal-close" onClick={() => setDeleteConfirm(null)}>x</button>
+            </div>
+            <div className="modal-body">
+              <p style={{ fontSize: 13, lineHeight: 1.7 }}>Remove <strong>{deleteConfirm.email}</strong> from the team? They will no longer be able to log in.</p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost btn-sm" onClick={() => setDeleteConfirm(null)}>Cancel</button>
+              <button className="btn btn-sm" style={{ background: '#c0392b' }} onClick={() => handleDelete(deleteConfirm.id)}>Remove</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

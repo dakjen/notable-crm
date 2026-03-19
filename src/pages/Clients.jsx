@@ -328,7 +328,7 @@ export function ClientDetail() {
           <div className="detail-card">
             <div className="detail-card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span>Assigned Products</span>
-              {availableProducts.length > 0 && <button className="btn btn-outline btn-sm" onClick={() => setShowAddProduct(true)}>+ Add</button>}
+              <button className="btn btn-outline btn-sm" onClick={() => setShowAddProduct(true)}>+ Add</button>
             </div>
             {clientProducts.length === 0 ? (
               <div style={{ color: '#aaa', fontSize: 12 }}>No products assigned.</div>
@@ -573,6 +573,17 @@ function ProductPicker({ products, onSelect }) {
   const TIER_OPTIONS = ['Notable Essentials', 'Notable Amplify', 'Notable Amplify & Retainer'];
   const grouped = {};
   TIER_OPTIONS.forEach(t => { grouped[t] = products.filter(p => p.tier === t); });
+
+  if (products.length === 0) {
+    return (
+      <div style={{ textAlign: 'center', padding: '16px 0' }}>
+        <div style={{ fontSize: 12, color: '#aaa', marginBottom: 8 }}>
+          {products.length === 0 ? 'No more products available to assign.' : 'All products are already assigned.'}
+        </div>
+        <div style={{ fontSize: 11, color: '#888' }}>Create new products from the Products page.</div>
+      </div>
+    );
+  }
 
   return (
     <div>

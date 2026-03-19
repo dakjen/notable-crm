@@ -165,4 +165,33 @@ router.get('/user-by-client/:clientId', requireAuth, requireAdmin, async (req, r
   }
 });
 
+// GET /api/auth/users — admin lists all users
+router.get('/users', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT id, email, role, "clientId", "createdAt" FROM users ORDER BY "createdAt"');
+    res.json(result.rows);
+  } catch (err) {
+    console.error('List users error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// DELETE /api/auth/users/:id — admin deletes a user (cannot delete self)
+router.delete('/users/:id', requireAuth, requireAdmin, async (req, res) => {
+  const targetId = parseInt(req.params.id);
+  if (targetId === req.user.id) {
+    return res.status(400).json({ error: 'Cannot delete your own account' });
+  }
+  try {
+    const result = await pool.query('DELETE FROM users WHERE id = $1 RETURNING id', [targetId]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    res.status(204).send();
+  } catch (err) {
+    console.error('Delete user error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 module.exports = { router, requireAuth, requireAdmin };
