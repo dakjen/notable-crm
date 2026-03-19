@@ -32,23 +32,32 @@ export function AppProvider({ children }) {
   const [clients, setClients] = useState([]);
   const [documents, setDocuments] = useState([]);
   const [products, setProducts] = useState([]);
+  const [clientProductsMap, setClientProductsMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     async function fetchData() {
       try {
-        const [clientsRes, documentsRes, productsRes] = await Promise.all([
+        const [clientsRes, documentsRes, productsRes, cpRes] = await Promise.all([
           authFetch('/api/clients'),
           authFetch('/api/documents'),
           authFetch('/api/products'),
+          authFetch('/api/client-products'),
         ]);
         const clientsData = await clientsRes.json();
         const documentsData = await documentsRes.json();
         const productsData = await productsRes.json();
+        const cpData = await cpRes.json();
         setClients(clientsData.map(parseClient));
         setDocuments(documentsData);
         setProducts(productsData.map(parseProduct));
+        // cpData is { clientId: [product, ...], ... }
+        const parsed = {};
+        for (const [cid, prods] of Object.entries(cpData)) {
+          parsed[cid] = prods.map(parseProduct);
+        }
+        setClientProductsMap(parsed);
       } catch (err) {
         setError(err);
       } finally {
@@ -57,6 +66,15 @@ export function AppProvider({ children }) {
     }
     fetchData();
   }, [authFetch]);
+
+  // Helper: get value of a client based on assigned products
+  const getClientValue = (clientId) => {
+    const prods = clientProductsMap[clientId] || [];
+    return prods.reduce((sum, p) => {
+      const n = parseInt((p.price || '').replace(/[^0-9]/g, ''));
+      return sum + (isNaN(n) ? 0 : n);
+    }, 0);
+  };
 
   const now = () => new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   const nowFull = () => new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -307,12 +325,18 @@ export function AppProvider({ children }) {
       body: JSON.stringify({ productIds }),
     });
     if (!res.ok) throw new Error('Failed to add products to client');
-    return (await res.json()).map(parseProduct);
+    const updated = (await res.json()).map(parseProduct);
+    setClientProductsMap(prev => ({ ...prev, [clientId]: updated }));
+    return updated;
   };
 
   const removeClientProduct = async (clientId, productId) => {
     const res = await authFetch(`/api/clients/${clientId}/products/${productId}`, { method: 'DELETE' });
     if (!res.ok) throw new Error('Failed to remove product from client');
+    setClientProductsMap(prev => ({
+      ...prev,
+      [clientId]: (prev[clientId] || []).filter(p => p.id !== productId),
+    }));
   };
 
   // ── STATS ──
@@ -322,7 +346,7 @@ export function AppProvider({ children }) {
     const pending = documents.filter(d => d.status === 'pending').length;
     const pipelineValue = clients
       .filter(c => ['Active', 'Discovery', 'Lead', 'In Review'].includes(c.stage))
-      .reduce((sum, c) => sum + (parseInt((c.value || '').replace(/[^0-9]/g, '')) || 0), 0);
+      .reduce((sum, c) => sum + getClientValue(c.id), 0);
     return { active, complete, pending, pipelineValue, total: clients.length };
   };
 
@@ -340,7 +364,8 @@ export function AppProvider({ children }) {
 
   return (
     <AppContext.Provider value={{
-      clients, documents, products, loading, error,
+      clients, documents, products, clientProductsMap, loading, error,
+      getClientValue,
       addClient, updateClient, deleteClient,
       addNote, deleteNote, toggleDeliverable, addDeliverable,
       addDocument, updateDocStatus, getClientDocs,

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { useNavigate, useParams } from 'react-router-dom';
-import { getTierClass, STAGE_STYLES, STAGES, getInitials } from '../data/constants';
+import { getTierClass, STAGE_STYLES, STAGES, getInitials, calcProductsValue, formatCurrency } from '../data/constants';
 import AddClientModal from '../components/AddClientModal';
 import SendDocModal from '../components/SendDocModal';
 
@@ -21,7 +21,7 @@ const DEL_STATUS = {
 
 // ── CLIENTS LIST ─────────────────────────────────────
 export function ClientsList() {
-  const { searchClients } = useApp();
+  const { searchClients, getClientValue } = useApp();
   const navigate = useNavigate();
   const [showAdd, setShowAdd] = useState(false);
   const [query, setQuery] = useState('');
@@ -56,17 +56,18 @@ export function ClientsList() {
           <thead>
             <tr>
               <th style={{ width: '22%' }}>Client</th>
-              <th style={{ width: '20%' }}>Tier</th>
-              <th style={{ width: '13%' }}>Stage</th>
-              <th style={{ width: '13%' }}>Added</th>
-              <th style={{ width: '13%' }}>Last Activity</th>
-              <th style={{ width: '11%' }}></th>
+              <th style={{ width: '16%' }}>Tier</th>
+              <th style={{ width: '11%' }}>Stage</th>
+              <th style={{ width: '11%' }}>Value</th>
+              <th style={{ width: '12%' }}>Added</th>
+              <th style={{ width: '12%' }}>Last Activity</th>
+              <th style={{ width: '8%' }}></th>
             </tr>
           </thead>
           <tbody>
             {results.length === 0 ? (
               <tr>
-                <td colSpan={6} style={{ textAlign: 'center', padding: '48px 0', color: 'var(--mauve)', fontSize: 12 }}>
+                <td colSpan={7} style={{ textAlign: 'center', padding: '48px 0', color: 'var(--mauve)', fontSize: 12 }}>
                   {query || stageFilter !== 'All' ? 'No clients match your search.' : 'No clients yet. Add your first client to get started.'}
                 </td>
               </tr>
@@ -83,6 +84,7 @@ export function ClientsList() {
                     </span>
                   </td>
                   <td><span className={`status-pill ${STAGE_STYLES[c.stage]?.pill || 'pill-lead'}`}>{c.stage}</span></td>
+                  <td style={{ fontWeight: 600, color: 'var(--cr)' }}>{getClientValue(c.id) > 0 ? `$${getClientValue(c.id).toLocaleString()}` : '--'}</td>
                   <td style={{ color: 'var(--mauve)', fontSize: 11 }}>{c.added}</td>
                   <td style={{ color: 'var(--mauve)', fontSize: 11 }}>{c.lastActivity}</td>
                   <td>
@@ -103,7 +105,7 @@ export function ClientsList() {
 // ── CLIENT DETAIL ─────────────────────────────────────
 export function ClientDetail() {
   const { id } = useParams();
-  const { clients, documents, products, updateClient, deleteClient, addNote, deleteNote, toggleDeliverable, addDeliverable, updateDocStatus, getClientProducts, addClientProducts, removeClientProduct, authFetch } = useApp();
+  const { clients, documents, products, clientProductsMap, updateClient, deleteClient, addNote, deleteNote, toggleDeliverable, addDeliverable, updateDocStatus, getClientProducts, addClientProducts, removeClientProduct, authFetch } = useApp();
   const navigate = useNavigate();
   const [showSendDoc, setShowSendDoc] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
@@ -111,7 +113,6 @@ export function ClientDetail() {
   const [newDelLabel, setNewDelLabel] = useState('');
   const [addingDel, setAddingDel] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
-  const [clientProducts, setClientProducts] = useState([]);
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [portalUser, setPortalUser] = useState(null);
   const [showCreateLogin, setShowCreateLogin] = useState(false);
@@ -121,12 +122,13 @@ export function ClientDetail() {
 
   const client = clients.find(c => c.id === id);
 
+  const clientProducts = clientProductsMap[id] || [];
+
   useEffect(() => {
     if (id) {
-      getClientProducts(id).then(setClientProducts).catch(() => {});
       authFetch(`/api/auth/user-by-client/${id}`).then(r => r.json()).then(setPortalUser).catch(() => {});
     }
-  }, [id, getClientProducts, authFetch]);
+  }, [id, authFetch]);
 
   if (!client) {
     return (
@@ -163,8 +165,7 @@ export function ClientDetail() {
   };
 
   const handleAddProducts = async (productIds) => {
-    const updated = await addClientProducts(id, productIds);
-    setClientProducts(updated);
+    await addClientProducts(id, productIds);
     // Also auto-add deliverables from new products
     const newProducts = products.filter(p => productIds.includes(p.id));
     const newDeliverables = [];
@@ -183,7 +184,6 @@ export function ClientDetail() {
 
   const handleRemoveProduct = async (productId) => {
     await removeClientProduct(id, productId);
-    setClientProducts(prev => prev.filter(p => p.id !== productId));
   };
 
   const handleCreateLogin = async () => {
@@ -265,10 +265,13 @@ export function ClientDetail() {
       </div>
 
       {/* Quick Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, marginBottom: 18 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 10, marginBottom: 18 }}>
         <div className="stat-card" style={{ padding: '10px 14px' }}>
-          <div className="stat-label">Products</div>
-          <div className="stat-value" style={{ fontSize: 18 }}>{clientProducts.length}</div>
+          <div className="stat-label">Value</div>
+          <div className="stat-value" style={{ fontSize: 18, color: 'var(--cr)' }}>
+            {calcProductsValue(clientProducts) > 0 ? formatCurrency('$' + calcProductsValue(clientProducts)) : '--'}
+          </div>
+          <div style={{ fontSize: 9, color: '#aaa', marginTop: 2 }}>from {clientProducts.length} product{clientProducts.length !== 1 ? 's' : ''}</div>
         </div>
         <div className="stat-card" style={{ padding: '10px 14px' }}>
           <div className="stat-label">Stage</div>

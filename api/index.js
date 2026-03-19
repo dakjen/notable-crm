@@ -241,6 +241,28 @@ app.delete('/api/products/:id', requireAuth, requireAdmin, async (req, res) => {
 });
 
 // ── CLIENT-PRODUCT ASSOCIATION ──────────────────────────
+// Bulk: get all client-product mappings
+app.get('/api/client-products', requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT cp."clientId", p.* FROM client_products cp
+       JOIN products p ON p.id = cp."productId"
+       ORDER BY cp."clientId", cp."addedAt"`
+    );
+    // Group by clientId
+    const map = {};
+    for (const row of result.rows) {
+      const cid = row.clientId;
+      if (!map[cid]) map[cid] = [];
+      map[cid].push(row);
+    }
+    res.json(map);
+  } catch (err) {
+    console.error('Error fetching all client products:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/clients/:id/products', requireAuth, async (req, res) => {
   try {
     const result = await pool.query(

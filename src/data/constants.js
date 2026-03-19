@@ -52,3 +52,14 @@ export function formatCurrency(val) {
   if (isNaN(n)) return val;
   return '$' + n.toLocaleString();
 }
+
+export function parsePrice(priceStr) {
+  if (!priceStr) return 0;
+  const n = parseInt(priceStr.replace(/[^0-9]/g, ''));
+  return isNaN(n) ? 0 : n;
+}
+
+export function calcProductsValue(products) {
+  if (!products || products.length === 0) return 0;
+  return products.reduce((sum, p) => sum + parsePrice(p.price), 0);
+}
