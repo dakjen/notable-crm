@@ -1,11 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { useNavigate, useParams } from 'react-router-dom';
 import { getTierClass, STAGE_STYLES, STAGES, getInitials } from '../data/constants';
 import AddClientModal from '../components/AddClientModal';
 import SendDocModal from '../components/SendDocModal';
 
-// ── STATUS BADGE ──────────────────────────────────────
 const DOC_STATUS_LABELS = {
   pending: { label: 'Pending', cls: 'db-pending' },
   signed:  { label: 'Signed',  cls: 'db-signed'  },
@@ -57,9 +56,8 @@ export function ClientsList() {
           <thead>
             <tr>
               <th style={{ width: '22%' }}>Client</th>
-              <th style={{ width: '16%' }}>Tier</th>
+              <th style={{ width: '20%' }}>Tier</th>
               <th style={{ width: '13%' }}>Stage</th>
-              <th style={{ width: '12%' }}>Value</th>
               <th style={{ width: '13%' }}>Added</th>
               <th style={{ width: '13%' }}>Last Activity</th>
               <th style={{ width: '11%' }}></th>
@@ -68,7 +66,7 @@ export function ClientsList() {
           <tbody>
             {results.length === 0 ? (
               <tr>
-                <td colSpan={7} style={{ textAlign: 'center', padding: '48px 0', color: 'var(--mauve)', fontSize: 12 }}>
+                <td colSpan={6} style={{ textAlign: 'center', padding: '48px 0', color: 'var(--mauve)', fontSize: 12 }}>
                   {query || stageFilter !== 'All' ? 'No clients match your search.' : 'No clients yet. Add your first client to get started.'}
                 </td>
               </tr>
@@ -81,15 +79,14 @@ export function ClientsList() {
                   </td>
                   <td>
                     <span className={`tier-tag ${getTierClass(c.tier)}`} style={{ fontSize: 9 }}>
-                      {c.tier.length > 14 ? c.tier.slice(0, 14) + '…' : c.tier}
+                      {(c.tier || 'No Tier').length > 18 ? (c.tier || '').slice(0, 18) + '...' : (c.tier || 'No Tier')}
                     </span>
                   </td>
                   <td><span className={`status-pill ${STAGE_STYLES[c.stage]?.pill || 'pill-lead'}`}>{c.stage}</span></td>
-                  <td style={{ fontWeight: 600 }}>{c.value || '—'}</td>
                   <td style={{ color: 'var(--mauve)', fontSize: 11 }}>{c.added}</td>
                   <td style={{ color: 'var(--mauve)', fontSize: 11 }}>{c.lastActivity}</td>
                   <td>
-                    <button className="btn btn-outline btn-sm" onClick={() => navigate(`/clients/${c.id}`)}>View →</button>
+                    <button className="btn btn-outline btn-sm" onClick={() => navigate(`/clients/${c.id}`)}>View</button>
                   </td>
                 </tr>
               ))
@@ -106,7 +103,7 @@ export function ClientsList() {
 // ── CLIENT DETAIL ─────────────────────────────────────
 export function ClientDetail() {
   const { id } = useParams();
-  const { clients, documents, updateClient, deleteClient, addNote, deleteNote, toggleDeliverable, addDeliverable, updateDocStatus } = useApp();
+  const { clients, documents, products, updateClient, deleteClient, addNote, deleteNote, toggleDeliverable, addDeliverable, updateDocStatus, getClientProducts, addClientProducts, removeClientProduct, authFetch } = useApp();
   const navigate = useNavigate();
   const [showSendDoc, setShowSendDoc] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
@@ -114,12 +111,27 @@ export function ClientDetail() {
   const [newDelLabel, setNewDelLabel] = useState('');
   const [addingDel, setAddingDel] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
+  const [clientProducts, setClientProducts] = useState([]);
+  const [showAddProduct, setShowAddProduct] = useState(false);
+  const [portalUser, setPortalUser] = useState(null);
+  const [showCreateLogin, setShowCreateLogin] = useState(false);
+  const [loginForm, setLoginForm] = useState({ email: '', password: '' });
+  const [loginError, setLoginError] = useState('');
+  const [loginSaving, setLoginSaving] = useState(false);
 
   const client = clients.find(c => c.id === id);
+
+  useEffect(() => {
+    if (id) {
+      getClientProducts(id).then(setClientProducts).catch(() => {});
+      authFetch(`/api/auth/user-by-client/${id}`).then(r => r.json()).then(setPortalUser).catch(() => {});
+    }
+  }, [id, getClientProducts, authFetch]);
+
   if (!client) {
     return (
       <div className="page-content">
-        <button className="back-link" onClick={() => navigate('/clients')}>← Back to Clients</button>
+        <button className="back-link" onClick={() => navigate('/clients')}>Back to Clients</button>
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--mauve)' }}>Client not found.</div>
       </div>
     );
@@ -150,11 +162,74 @@ export function ClientDetail() {
     navigate('/clients');
   };
 
+  const handleAddProducts = async (productIds) => {
+    const updated = await addClientProducts(id, productIds);
+    setClientProducts(updated);
+    // Also auto-add deliverables from new products
+    const newProducts = products.filter(p => productIds.includes(p.id));
+    const newDeliverables = [];
+    for (const prod of newProducts) {
+      if (prod.deliverables && prod.deliverables.length > 0) {
+        for (const d of prod.deliverables) {
+          newDeliverables.push({ id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, label: d.label, status: 'pending' });
+        }
+      }
+    }
+    if (newDeliverables.length > 0) {
+      await updateClient(id, { deliverables: [...deliverables, ...newDeliverables] });
+    }
+    setShowAddProduct(false);
+  };
+
+  const handleRemoveProduct = async (productId) => {
+    await removeClientProduct(id, productId);
+    setClientProducts(prev => prev.filter(p => p.id !== productId));
+  };
+
+  const handleCreateLogin = async () => {
+    if (!loginForm.email.trim() || !loginForm.password.trim()) {
+      setLoginError('Email and password required.');
+      return;
+    }
+    if (loginForm.password.length < 6) {
+      setLoginError('Password must be at least 6 characters.');
+      return;
+    }
+    setLoginSaving(true);
+    setLoginError('');
+    try {
+      const res = await authFetch('/api/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({ email: loginForm.email.trim(), password: loginForm.password, role: 'client', clientId: id }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to create login');
+      }
+      const user = await res.json();
+      setPortalUser(user);
+      setShowCreateLogin(false);
+      setLoginForm({ email: '', password: '' });
+    } catch (err) {
+      setLoginError(err.message);
+    } finally {
+      setLoginSaving(false);
+    }
+  };
+
+  const handleDownload = (doc) => {
+    if (doc.fileUrl) {
+      window.open(doc.fileUrl, '_blank');
+    }
+  };
+
   const tabs = ['overview', 'deliverables', 'documents', 'notes', 'timeline'];
+
+  const availableProducts = products.filter(p => p.active && !clientProducts.find(cp => cp.id === p.id));
 
   return (
     <div className="page-content">
-      <button className="back-link" onClick={() => navigate('/clients')}>← Back to Clients</button>
+      <button className="back-link" onClick={() => navigate('/clients')}>Back to Clients</button>
       <div className="cr-bar" />
 
       {/* Client Header */}
@@ -163,7 +238,16 @@ export function ClientDetail() {
         <div style={{ flex: 1 }}>
           <div className="client-header-name">{client.firstName.toUpperCase()} {client.lastName.toUpperCase()}</div>
           <div className="client-header-sub">
-            {client.company || 'No company'} · <span className={`tier-tag ${getTierClass(client.tier)}`} style={{ fontSize: 9 }}>{client.tier}</span>
+            {client.company || 'No company'}
+            {clientProducts.length > 0 && (
+              <span style={{ marginLeft: 8 }}>
+                {clientProducts.map(p => (
+                  <span key={p.id} className={`tier-tag ${getTierClass(p.tier)}`} style={{ fontSize: 8, padding: '1px 5px', marginLeft: 4 }}>
+                    {p.name}
+                  </span>
+                ))}
+              </span>
+            )}
           </div>
         </div>
         <div className="client-header-actions">
@@ -176,15 +260,15 @@ export function ClientDetail() {
             {STAGES.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
           <button className="btn btn-outline btn-sm" onClick={() => setShowSendDoc(true)}>+ Send Doc</button>
-          <button className="btn btn-sm" onClick={() => setShowDelete(true)} style={{ background: '#888' }}>⋯</button>
+          <button className="btn btn-sm" onClick={() => setShowDelete(true)} style={{ background: '#888' }}>...</button>
         </div>
       </div>
 
       {/* Quick Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, marginBottom: 18 }}>
         <div className="stat-card" style={{ padding: '10px 14px' }}>
-          <div className="stat-label">Value</div>
-          <div className="stat-value" style={{ fontSize: 18 }}>{client.value || '—'}</div>
+          <div className="stat-label">Products</div>
+          <div className="stat-value" style={{ fontSize: 18 }}>{clientProducts.length}</div>
         </div>
         <div className="stat-card" style={{ padding: '10px 14px' }}>
           <div className="stat-label">Stage</div>
@@ -228,17 +312,52 @@ export function ClientDetail() {
         <div className="detail-grid">
           <div className="detail-card">
             <div className="detail-card-title">Contact Info</div>
-            <div className="detail-row"><span className="detail-label">Email</span><span className="detail-val">{client.email || '—'}</span></div>
-            <div className="detail-row"><span className="detail-label">Phone</span><span className="detail-val">{client.phone || '—'}</span></div>
-            <div className="detail-row"><span className="detail-label">Company</span><span className="detail-val">{client.company || '—'}</span></div>
+            <div className="detail-row"><span className="detail-label">Email</span><span className="detail-val">{client.email || '--'}</span></div>
+            <div className="detail-row"><span className="detail-label">Phone</span><span className="detail-val">{client.phone || '--'}</span></div>
+            <div className="detail-row"><span className="detail-label">Company</span><span className="detail-val">{client.company || '--'}</span></div>
           </div>
           <div className="detail-card">
             <div className="detail-card-title">Engagement</div>
-            <div className="detail-row"><span className="detail-label">Package</span><span className="detail-val">{client.tier}</span></div>
-            <div className="detail-row"><span className="detail-label">Value</span><span className="detail-val" style={{ color: 'var(--cr)', fontWeight: 700 }}>{client.value || '—'}</span></div>
             <div className="detail-row"><span className="detail-label">Stage</span><span className="detail-val">{client.stage}</span></div>
             <div className="detail-row"><span className="detail-label">Added</span><span className="detail-val">{client.added}</span></div>
             <div className="detail-row"><span className="detail-label">Last Activity</span><span className="detail-val">{client.lastActivity}</span></div>
+          </div>
+          <div className="detail-card">
+            <div className="detail-card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>Assigned Products</span>
+              {availableProducts.length > 0 && <button className="btn btn-outline btn-sm" onClick={() => setShowAddProduct(true)}>+ Add</button>}
+            </div>
+            {clientProducts.length === 0 ? (
+              <div style={{ color: '#aaa', fontSize: 12 }}>No products assigned.</div>
+            ) : (
+              clientProducts.map(p => (
+                <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderBottom: '0.5px solid var(--soft)' }}>
+                  <div>
+                    <span style={{ fontSize: 12, fontWeight: 700 }}>{p.name}</span>
+                    {p.price && <span style={{ fontSize: 10, color: '#888', marginLeft: 6 }}>{p.price}</span>}
+                    <span className={`tier-tag ${getTierClass(p.tier)}`} style={{ fontSize: 7, padding: '1px 4px', marginLeft: 6 }}>{p.tier}</span>
+                  </div>
+                  <button onClick={() => handleRemoveProduct(p.id)} style={{ background: 'none', border: 'none', color: '#ccc', cursor: 'pointer', fontSize: 12 }}>x</button>
+                </div>
+              ))
+            )}
+          </div>
+          <div className="detail-card">
+            <div className="detail-card-title">Portal Access</div>
+            {portalUser ? (
+              <div>
+                <div className="detail-row"><span className="detail-label">Portal Email</span><span className="detail-val">{portalUser.email}</span></div>
+                <div className="detail-row"><span className="detail-label">Created</span><span className="detail-val">{new Date(portalUser.createdAt).toLocaleDateString()}</span></div>
+                <span className="status-pill pill-active" style={{ marginTop: 4 }}>Active</span>
+              </div>
+            ) : (
+              <div>
+                <div style={{ color: '#aaa', fontSize: 12, marginBottom: 8 }}>No portal login created.</div>
+                <button className="btn btn-outline btn-sm" onClick={() => { setShowCreateLogin(true); setLoginForm({ email: client.email || '', password: '' }); }}>
+                  Create Portal Login
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -247,11 +366,11 @@ export function ClientDetail() {
       {activeTab === 'deliverables' && (
         <div className="detail-card full" style={{ maxWidth: '100%' }}>
           <div className="detail-card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>Deliverables — {doneCount}/{deliverables.length} complete</span>
+            <span>Deliverables -- {doneCount}/{deliverables.length} complete</span>
             <button className="btn btn-outline btn-sm" onClick={() => setAddingDel(!addingDel)}>+ Add</button>
           </div>
           {deliverables.length === 0 && !addingDel && (
-            <div style={{ color: 'var(--mauve)', fontSize: 12 }}>No deliverables yet.</div>
+            <div style={{ color: 'var(--mauve)', fontSize: 12 }}>No deliverables yet. Assign products to auto-populate deliverables.</div>
           )}
           {deliverables.map(d => {
             const s = DEL_STATUS[d.status] || DEL_STATUS.pending;
@@ -290,7 +409,7 @@ export function ClientDetail() {
               <button className="btn btn-ghost btn-sm" onClick={() => setAddingDel(false)}>Cancel</button>
             </div>
           )}
-          <div style={{ fontSize: 10, color: '#aaa', marginTop: 10 }}>Click checkbox to cycle: Not Started → In Progress → Done</div>
+          <div style={{ fontSize: 10, color: '#aaa', marginTop: 10 }}>Click checkbox to cycle: Not Started, In Progress, Done</div>
         </div>
       )}
 
@@ -312,10 +431,16 @@ export function ClientDetail() {
                   </div>
                   <div className="doc-info">
                     <div className="doc-name">{doc.docName}{doc.invoiceNumber ? ` #${doc.invoiceNumber}` : ''}</div>
-                    <div className="doc-meta">{doc.docType} · {doc.actionRequired} · Sent {doc.sentDate}</div>
+                    <div className="doc-meta">
+                      {doc.docType} · {doc.actionRequired} · Sent {doc.sentDate}
+                      {doc.fileName && <span style={{ color: 'var(--cr)' }}> · {doc.fileName}</span>}
+                    </div>
                   </div>
                   <div className="doc-actions">
                     <span className={`doc-badge ${s.cls}`}>{s.label}</span>
+                    {doc.fileUrl && (
+                      <button className="btn btn-outline btn-sm" style={{ fontSize: 9 }} onClick={() => handleDownload(doc)}>Download</button>
+                    )}
                     {doc.status === 'pending' && (
                       <>
                         <button className="btn btn-sm" style={{ fontSize: 9 }} onClick={() => updateDocStatus(doc.id, 'signed')}>Mark Signed</button>
@@ -353,7 +478,7 @@ export function ClientDetail() {
               <div key={note.id} style={{ background: 'var(--white)', border: '0.5px solid var(--border)', padding: '12px 14px', marginBottom: 8 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
                   <div style={{ fontSize: 12, color: 'var(--nbk)', lineHeight: 1.7, flex: 1, whiteSpace: 'pre-wrap' }}>{note.text}</div>
-                  <button onClick={() => deleteNote(id, note.id)} style={{ background: 'none', border: 'none', color: '#ccc', cursor: 'pointer', fontSize: 14, flexShrink: 0 }}>✕</button>
+                  <button onClick={() => deleteNote(id, note.id)} style={{ background: 'none', border: 'none', color: '#ccc', cursor: 'pointer', fontSize: 14, flexShrink: 0 }}>x</button>
                 </div>
                 <div style={{ fontSize: 10, color: 'var(--mauve)', marginTop: 6 }}>{note.date}</div>
               </div>
@@ -386,7 +511,7 @@ export function ClientDetail() {
       {showDelete && (
         <div className="modal-backdrop" onClick={() => setShowDelete(false)}>
           <div className="modal" style={{ maxWidth: 360 }} onClick={e => e.stopPropagation()}>
-            <div className="modal-header"><span className="modal-title">Remove Client</span><button className="modal-close" onClick={() => setShowDelete(false)}>✕</button></div>
+            <div className="modal-header"><span className="modal-title">Remove Client</span><button className="modal-close" onClick={() => setShowDelete(false)}>x</button></div>
             <div className="modal-body">
               <p style={{ fontSize: 13, lineHeight: 1.7 }}>Are you sure you want to remove <strong>{client.firstName} {client.lastName}</strong> and all their documents? This cannot be undone.</p>
             </div>
@@ -398,7 +523,75 @@ export function ClientDetail() {
         </div>
       )}
 
+      {/* Add Product Modal */}
+      {showAddProduct && (
+        <div className="modal-backdrop" onClick={() => setShowAddProduct(false)}>
+          <div className="modal" style={{ maxWidth: 400 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header"><span className="modal-title">Add Products</span><button className="modal-close" onClick={() => setShowAddProduct(false)}>x</button></div>
+            <div className="modal-body">
+              <ProductPicker products={availableProducts} onSelect={handleAddProducts} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Portal Login Modal */}
+      {showCreateLogin && (
+        <div className="modal-backdrop" onClick={() => setShowCreateLogin(false)}>
+          <div className="modal" style={{ maxWidth: 400 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header"><span className="modal-title">Create Portal Login</span><button className="modal-close" onClick={() => setShowCreateLogin(false)}>x</button></div>
+            <div className="modal-body">
+              {loginError && <div style={{ color: '#c0392b', fontSize: 11, marginBottom: 12 }}>{loginError}</div>}
+              <div className="form-group">
+                <label className="form-label">Email</label>
+                <input className="form-input" type="email" value={loginForm.email} onChange={e => setLoginForm(f => ({ ...f, email: e.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Password</label>
+                <input className="form-input" type="password" value={loginForm.password} onChange={e => setLoginForm(f => ({ ...f, password: e.target.value }))} placeholder="Min 6 characters" />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowCreateLogin(false)}>Cancel</button>
+              <button className="btn btn-sm" onClick={handleCreateLogin} disabled={loginSaving}>{loginSaving ? 'Creating...' : 'Create Login'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showSendDoc && <SendDocModal onClose={() => setShowSendDoc(false)} preselectedClientId={id} />}
+    </div>
+  );
+}
+
+// ── PRODUCT PICKER ──
+function ProductPicker({ products, onSelect }) {
+  const [selected, setSelected] = useState([]);
+  const TIER_OPTIONS = ['Notable Essentials', 'Notable Amplify', 'Notable Amplify & Retainer'];
+  const grouped = {};
+  TIER_OPTIONS.forEach(t => { grouped[t] = products.filter(p => p.tier === t); });
+
+  return (
+    <div>
+      {TIER_OPTIONS.map(tier => {
+        const tierProducts = grouped[tier];
+        if (!tierProducts || tierProducts.length === 0) return null;
+        return (
+          <div key={tier} style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: '#888', marginBottom: 4 }}>{tier}</div>
+            {tierProducts.map(p => (
+              <label key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 12, cursor: 'pointer' }}>
+                <input type="checkbox" checked={selected.includes(p.id)} onChange={() => setSelected(s => s.includes(p.id) ? s.filter(id => id !== p.id) : [...s, p.id])} />
+                <span>{p.name}</span>
+                {p.price && <span style={{ color: '#888', fontSize: 10 }}>{p.price}</span>}
+              </label>
+            ))}
+          </div>
+        );
+      })}
+      <button className="btn btn-sm" style={{ marginTop: 10 }} disabled={selected.length === 0} onClick={() => onSelect(selected)}>
+        Add {selected.length} Product{selected.length !== 1 ? 's' : ''}
+      </button>
     </div>
   );
 }

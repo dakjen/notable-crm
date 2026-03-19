@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import SendDocModal from '../components/SendDocModal';
 
@@ -39,6 +40,10 @@ export function Documents() {
 
   const pending = documents.filter(d => d.status === 'pending').length;
   const signed = documents.filter(d => ['signed', 'approved', 'paid'].includes(d.status)).length;
+
+  const handleDownload = (doc) => {
+    if (doc.fileUrl) window.open(doc.fileUrl, '_blank');
+  };
 
   return (
     <div className="page-content">
@@ -85,13 +90,17 @@ export function Documents() {
               <div className="doc-info">
                 <div className="doc-name">
                   {doc.docName}{doc.invoiceNumber ? ` #${doc.invoiceNumber}` : ''}
+                  {doc.fileName && <span style={{ fontSize: 10, color: 'var(--cr)', marginLeft: 6 }}>{doc.fileName}</span>}
                 </div>
                 <div className="doc-meta">
-                  {client ? `${client.firstName} ${client.lastName}` : '—'} · {doc.docType} · {doc.actionRequired} · Sent {doc.sentDate}
+                  {client ? `${client.firstName} ${client.lastName}` : '--'} · {doc.docType} · {doc.actionRequired} · Sent {doc.sentDate}
                 </div>
               </div>
               <div className="doc-actions">
                 <span className={`doc-badge ${s.cls}`}>{s.label}</span>
+                {doc.fileUrl && (
+                  <button className="btn btn-outline btn-sm" style={{ fontSize: 9 }} onClick={() => handleDownload(doc)}>Download</button>
+                )}
                 {doc.status === 'pending' && (
                   <>
                     {doc.docType === 'Invoice'
@@ -102,7 +111,7 @@ export function Documents() {
                 )}
                 {client && (
                   <button className="btn btn-outline btn-sm" style={{ fontSize: 9 }} onClick={() => navigate(`/clients/${client.id}`)}>
-                    Client →
+                    Client
                   </button>
                 )}
               </div>
@@ -147,12 +156,13 @@ export function Signatures() {
                     </div>
                     <div className="doc-info">
                       <div className="doc-name">{doc.docName}</div>
-                      <div className="doc-meta">{client ? `${client.firstName} ${client.lastName}` : '—'} · Sent {doc.sentDate}</div>
+                      <div className="doc-meta">{client ? `${client.firstName} ${client.lastName}` : '--'} · Sent {doc.sentDate}</div>
                     </div>
                     <div className="doc-actions">
                       <span className="doc-badge db-pending">Awaiting</span>
+                      {doc.fileUrl && <button className="btn btn-outline btn-sm" style={{ fontSize: 9 }} onClick={() => window.open(doc.fileUrl, '_blank')}>Download</button>}
                       <button className="btn btn-sm" style={{ fontSize: 9 }} onClick={() => updateDocStatus(doc.id, 'signed')}>Mark Signed</button>
-                      {client && <button className="btn btn-outline btn-sm" style={{ fontSize: 9 }} onClick={() => navigate(`/clients/${client.id}`)}>Client →</button>}
+                      {client && <button className="btn btn-outline btn-sm" style={{ fontSize: 9 }} onClick={() => navigate(`/clients/${client.id}`)}>Client</button>}
                     </div>
                   </div>
                 );
@@ -171,10 +181,11 @@ export function Signatures() {
                     </div>
                     <div className="doc-info">
                       <div className="doc-name">{doc.docName}</div>
-                      <div className="doc-meta">{client ? `${client.firstName} ${client.lastName}` : '—'} · Signed {doc.updatedDate || doc.sentDate}</div>
+                      <div className="doc-meta">{client ? `${client.firstName} ${client.lastName}` : '--'} · Signed {doc.updatedDate || doc.sentDate}</div>
                     </div>
                     <div className="doc-actions">
                       <span className="doc-badge db-signed">Signed</span>
+                      {doc.fileUrl && <button className="btn btn-outline btn-sm" style={{ fontSize: 9 }} onClick={() => window.open(doc.fileUrl, '_blank')}>Download</button>}
                     </div>
                   </div>
                 );
@@ -219,13 +230,14 @@ export function Payments() {
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
                 </div>
                 <div className="doc-info">
-                  <div className="doc-name">Invoice #{doc.invoiceNumber} — {doc.docName}</div>
-                  <div className="doc-meta">{client ? `${client.firstName} ${client.lastName}` : '—'} · Sent {doc.sentDate}</div>
+                  <div className="doc-name">Invoice #{doc.invoiceNumber} -- {doc.docName}</div>
+                  <div className="doc-meta">{client ? `${client.firstName} ${client.lastName}` : '--'} · Sent {doc.sentDate}</div>
                 </div>
                 <div className="doc-actions">
                   <span className={`doc-badge ${doc.status === 'paid' ? 'db-paid' : 'db-pending'}`}>
                     {doc.status === 'paid' ? 'Paid' : 'Outstanding'}
                   </span>
+                  {doc.fileUrl && <button className="btn btn-outline btn-sm" style={{ fontSize: 9 }} onClick={() => window.open(doc.fileUrl, '_blank')}>Download</button>}
                 </div>
               </div>
             );
@@ -238,11 +250,14 @@ export function Payments() {
 
 // ── REPORTS ───────────────────────────────────────────
 export function Reports() {
-  const { clients, documents, getStats } = useApp();
+  const { clients, documents, products, getStats } = useApp();
   const stats = getStats();
 
   const byTier = {};
-  clients.forEach(c => { byTier[c.tier] = (byTier[c.tier] || 0) + 1; });
+  clients.forEach(c => {
+    const tier = c.tier || 'Unassigned';
+    byTier[tier] = (byTier[tier] || 0) + 1;
+  });
 
   const byStage = {};
   clients.forEach(c => { byStage[c.stage] = (byStage[c.stage] || 0) + 1; });
@@ -263,7 +278,7 @@ export function Reports() {
             <div className="stat-card"><div className="stat-label">Total Clients</div><div className="stat-value">{stats.total}</div></div>
             <div className="stat-card"><div className="stat-label">Active</div><div className="stat-value">{stats.active}</div></div>
             <div className="stat-card"><div className="stat-label">Completed</div><div className="stat-value">{stats.complete}</div></div>
-            <div className="stat-card"><div className="stat-label">Pipeline Value</div><div className="stat-value">${stats.pipelineValue.toLocaleString()}</div></div>
+            <div className="stat-card"><div className="stat-label">Products</div><div className="stat-value">{products.length}</div></div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
@@ -291,6 +306,20 @@ export function Reports() {
               <div className="detail-row"><span className="detail-label">Pending</span><span>{documents.filter(d => d.status === 'pending').length}</span></div>
               <div className="detail-row"><span className="detail-label">Signed / Approved</span><span>{documents.filter(d => ['signed','approved'].includes(d.status)).length}</span></div>
               <div className="detail-row"><span className="detail-label">Invoices Paid</span><span style={{ color: '#1a6b3a', fontWeight: 700 }}>{documents.filter(d => d.status === 'paid').length}</span></div>
+              <div className="detail-row"><span className="detail-label">With Files</span><span>{documents.filter(d => d.fileUrl).length}</span></div>
+            </div>
+            <div className="detail-card">
+              <div className="detail-card-title">Products</div>
+              {products.length === 0 ? (
+                <div style={{ fontSize: 12, color: '#aaa' }}>No products created yet.</div>
+              ) : (
+                products.map(p => (
+                  <div key={p.id} className="detail-row">
+                    <span className="detail-label" style={{ fontSize: 11 }}>{p.name}</span>
+                    <span style={{ fontSize: 10, color: '#888' }}>{p.tier} {p.price && `· ${p.price}`}</span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </>
@@ -301,11 +330,11 @@ export function Reports() {
 
 // ── TEAM ─────────────────────────────────────────────
 export function Team() {
+  const { user } = useAuth();
   return (
     <div className="page-content">
       <div className="section-header">
         <div className="section-title">Team</div>
-        <button className="btn">+ Invite Member</button>
       </div>
       <div className="table-wrap">
         <table>
@@ -320,7 +349,7 @@ export function Team() {
           <tbody>
             <tr>
               <td style={{ fontWeight: 700 }}>Admin</td>
-              <td>admin@gobenotable.com</td>
+              <td>{user?.email || 'admin@gobenotable.com'}</td>
               <td><span className="tier-tag tier-amp">Owner</span></td>
               <td><span className="status-pill pill-active">Active</span></td>
             </tr>
@@ -336,7 +365,11 @@ export function Team() {
 
 // ── SETTINGS ─────────────────────────────────────────
 export function Settings() {
-  const { clients, documents, clearAllData } = useApp();
+  const { clients, documents, products, clearAllData } = useApp();
+  const { changePassword } = useAuth();
+  const [pwForm, setPwForm] = useState({ current: '', new: '', confirm: '' });
+  const [pwMsg, setPwMsg] = useState('');
+  const [pwError, setPwError] = useState('');
 
   const handleClearData = async () => {
     if (window.confirm('Clear ALL portal data? This cannot be undone.')) {
@@ -345,6 +378,30 @@ export function Settings() {
       } catch (err) {
         alert('Failed to clear data. Please try again.');
       }
+    }
+  };
+
+  const handleChangePassword = async () => {
+    setPwError('');
+    setPwMsg('');
+    if (!pwForm.current || !pwForm.new) {
+      setPwError('Fill in all fields.');
+      return;
+    }
+    if (pwForm.new !== pwForm.confirm) {
+      setPwError('New passwords do not match.');
+      return;
+    }
+    if (pwForm.new.length < 6) {
+      setPwError('Password must be at least 6 characters.');
+      return;
+    }
+    try {
+      await changePassword(pwForm.current, pwForm.new);
+      setPwMsg('Password updated successfully.');
+      setPwForm({ current: '', new: '', confirm: '' });
+    } catch (err) {
+      setPwError(err.message);
     }
   };
 
@@ -360,22 +417,22 @@ export function Settings() {
           <button className="btn btn-sm">Save Changes</button>
         </div>
         <div className="detail-card">
-          <div className="detail-card-title">Notifications</div>
-          <div style={{ fontSize: 12, color: 'var(--dkgray)', lineHeight: 2.2 }}>
-            <div>☑ Email when a client signs a document</div>
-            <div>☑ Email when a payment is received</div>
-            <div>☐ Email when a client views a document</div>
-            <div>☑ Weekly pipeline summary</div>
-          </div>
-          <button className="btn btn-sm" style={{ marginTop: 12 }}>Save Preferences</button>
+          <div className="detail-card-title">Change Password</div>
+          {pwError && <div style={{ color: '#c0392b', fontSize: 11, marginBottom: 8 }}>{pwError}</div>}
+          {pwMsg && <div style={{ color: '#1a6b3a', fontSize: 11, marginBottom: 8 }}>{pwMsg}</div>}
+          <div className="form-group"><label className="form-label">Current Password</label><input className="form-input" type="password" value={pwForm.current} onChange={e => setPwForm(f => ({ ...f, current: e.target.value }))} /></div>
+          <div className="form-group"><label className="form-label">New Password</label><input className="form-input" type="password" value={pwForm.new} onChange={e => setPwForm(f => ({ ...f, new: e.target.value }))} /></div>
+          <div className="form-group"><label className="form-label">Confirm New Password</label><input className="form-input" type="password" value={pwForm.confirm} onChange={e => setPwForm(f => ({ ...f, confirm: e.target.value }))} /></div>
+          <button className="btn btn-sm" onClick={handleChangePassword}>Update Password</button>
         </div>
         <div className="detail-card">
           <div className="detail-card-title">Data</div>
           <div className="detail-row"><span className="detail-label">Clients stored</span><span>{clients.length}</span></div>
           <div className="detail-row"><span className="detail-label">Documents stored</span><span>{documents.length}</span></div>
+          <div className="detail-row"><span className="detail-label">Products</span><span>{products.length}</span></div>
           <div className="detail-row"><span className="detail-label">Storage</span><span>Neon PostgreSQL</span></div>
           <div style={{ marginTop: 12, padding: '10px 12px', background: 'var(--cr-bg)', border: '1px solid var(--border)', fontSize: 11, color: 'var(--mauve)', lineHeight: 1.6 }}>
-            Data is stored in your Neon PostgreSQL database and syncs across all devices.
+            Data is stored in your Neon PostgreSQL database. Files stored via Vercel Blob.
           </div>
           <button className="btn btn-ghost btn-sm" style={{ marginTop: 10, color: '#c0392b', borderColor: '#c0392b' }} onClick={handleClearData}>
             Clear All Data
@@ -385,12 +442,12 @@ export function Settings() {
           <div className="detail-card-title">Phase 2 Roadmap</div>
           <div style={{ fontSize: 12, color: 'var(--dkgray)', lineHeight: 2 }}>
             <div style={{ color: '#1a6b3a' }}>&#x2611; Backend database (Neon PostgreSQL)</div>
-            <div>&#x2610; Client-facing portal with login</div>
+            <div style={{ color: '#1a6b3a' }}>&#x2611; Authentication & login system</div>
+            <div style={{ color: '#1a6b3a' }}>&#x2611; Products & tier management</div>
+            <div style={{ color: '#1a6b3a' }}>&#x2611; Document file uploads</div>
+            <div>&#x2610; Client-facing portal</div>
             <div>&#x2610; E-signature integration</div>
             <div>&#x2610; Stripe payment processing</div>
-            <div>&#x2610; Essentials package purchase flow</div>
-            <div>&#x2610; Auto-generate proposals/invoices</div>
-            <div>&#x2610; Team member accounts</div>
             <div>&#x2610; Email notifications</div>
           </div>
         </div>

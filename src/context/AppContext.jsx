@@ -1,48 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useAuth } from './AuthContext';
 
 const AppContext = createContext();
-
-function defaultDeliverables(tier) {
-  const maps = {
-    'Ready 2 Roll': [
-      { label: '7-Page Qualifications Package', status: 'pending' },
-      { label: 'Project Deck Template', status: 'pending' },
-      { label: '1-Page Website', status: 'pending' },
-    ],
-    'Get Loud': [
-      { label: '8–12 Page Qualifications Package', status: 'pending' },
-      { label: 'Project Deck Template (About + Founder)', status: 'pending' },
-      { label: '2–4 Page Website', status: 'pending' },
-      { label: 'Monthly Maintenance Setup', status: 'pending' },
-    ],
-    'Marquis': [
-      { label: 'Full Qualifications Package', status: 'pending' },
-      { label: 'Full Presentation Deck', status: 'pending' },
-      { label: '2–4 Page Premium Website', status: 'pending' },
-      { label: '1 Year Maintenance Setup', 'status': 'pending' },
-    ],
-    'LinkedIn Voice Intensive': [
-      { label: 'Profile Audit & Rewrite', status: 'pending' },
-      { label: 'Brand Voice + Content Pillars', status: 'pending' },
-      { label: '2 Months of LinkedIn Posts', status: 'pending' },
-      { label: '30-Day Content Calendar', status: 'pending' },
-      { label: 'Strategy Session (60 min)', status: 'pending' },
-    ],
-    'Notable Amplify': [
-      { label: 'Phase 1 — Platform Assessment', status: 'pending' },
-      { label: 'Phase 2 — Platform Opportunity Map', status: 'pending' },
-      { label: 'Phase 3 — Build & Execute', status: 'pending' },
-      { label: 'Phase 4 — Launch Package', status: 'pending' },
-    ],
-    'Notable Amplify+ Ongoing': [
-      { label: 'Monthly Strategy Session', status: 'pending' },
-      { label: 'Ongoing Content Production', status: 'pending' },
-      { label: 'Quarterly Revenue Stream Review', status: 'pending' },
-      { label: 'Brand Asset Updates', status: 'pending' },
-    ],
-  };
-  return (maps[tier] || []).map((d, i) => ({ ...d, id: `${Date.now()}_${i}` }));
-}
 
 function parseJsonField(val) {
   if (!val) return [];
@@ -61,22 +20,35 @@ function parseClient(client) {
   };
 }
 
+function parseProduct(product) {
+  return {
+    ...product,
+    deliverables: parseJsonField(product.deliverables),
+  };
+}
+
 export function AppProvider({ children }) {
+  const { authFetch } = useAuth();
   const [clients, setClients] = useState([]);
   const [documents, setDocuments] = useState([]);
+  const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     async function fetchData() {
       try {
-        const clientsResponse = await fetch('/api/clients');
-        const clientsData = await clientsResponse.json();
+        const [clientsRes, documentsRes, productsRes] = await Promise.all([
+          authFetch('/api/clients'),
+          authFetch('/api/documents'),
+          authFetch('/api/products'),
+        ]);
+        const clientsData = await clientsRes.json();
+        const documentsData = await documentsRes.json();
+        const productsData = await productsRes.json();
         setClients(clientsData.map(parseClient));
-
-        const documentsResponse = await fetch('/api/documents');
-        const documentsData = await documentsResponse.json();
         setDocuments(documentsData);
+        setProducts(productsData.map(parseProduct));
       } catch (err) {
         setError(err);
       } finally {
@@ -84,7 +56,7 @@ export function AppProvider({ children }) {
       }
     }
     fetchData();
-  }, []);
+  }, [authFetch]);
 
   const now = () => new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   const nowFull = () => new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -96,14 +68,13 @@ export function AppProvider({ children }) {
       id: Date.now().toString(),
       added: now(),
       lastActivity: now(),
-      deliverables: defaultDeliverables(data.tier),
+      deliverables: [],
       notes: data.notes ? [{ id: Date.now().toString(), text: data.notes, date: nowFull() }] : [],
       timeline: [{ id: Date.now().toString(), text: `${data.firstName} ${data.lastName} added to portal`, date: nowFull(), type: 'added' }]
     };
     try {
-      const response = await fetch('/api/clients', {
+      const response = await authFetch('/api/clients', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(client),
       });
       if (!response.ok) throw new Error('Failed to add client');
@@ -128,9 +99,8 @@ export function AppProvider({ children }) {
         merged.lastActivity = now();
       }
 
-      const response = await fetch(`/api/clients/${id}`, {
+      const response = await authFetch(`/api/clients/${id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(merged),
       });
       if (!response.ok) throw new Error('Failed to update client');
@@ -146,12 +116,10 @@ export function AppProvider({ children }) {
 
   const deleteClient = async (id) => {
     try {
-      const response = await fetch(`/api/clients/${id}`, {
-        method: 'DELETE',
-      });
+      const response = await authFetch(`/api/clients/${id}`, { method: 'DELETE' });
       if (!response.ok) throw new Error('Failed to delete client');
       setClients(prev => prev.filter(c => c.id !== id));
-      setDocuments(prev => prev.filter(d => d.clientId !== id)); // Also remove associated documents
+      setDocuments(prev => prev.filter(d => d.clientId !== id));
     } catch (err) {
       setError(err);
       throw err;
@@ -160,7 +128,7 @@ export function AppProvider({ children }) {
 
   const addNote = async (clientId, text) => {
     const noteObj = { id: Date.now().toString(), text, date: nowFull() };
-    const tlEntry = { id: (Date.now() + 1).toString(), text: `Note: "${text.slice(0, 55)}${text.length > 55 ? '…' : ''}"`, date: nowFull(), type: 'note' };
+    const tlEntry = { id: (Date.now() + 1).toString(), text: `Note: "${text.slice(0, 55)}${text.length > 55 ? '...' : ''}"`, date: nowFull(), type: 'note' };
     const clientToUpdate = clients.find(c => c.id === clientId);
     if (clientToUpdate) {
       const updatedClient = {
@@ -221,16 +189,14 @@ export function AppProvider({ children }) {
       invoiceNumber: data.docType === 'Invoice' ? nextInvoiceNumber() : null
     };
     try {
-      const response = await fetch('/api/documents', {
+      const response = await authFetch('/api/documents', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(doc),
       });
       if (!response.ok) throw new Error('Failed to add document');
       const newDoc = await response.json();
       setDocuments(prev => [newDoc, ...prev]);
 
-      // Update client's timeline
       const entry = { id: Date.now().toString(), text: `${data.docType} "${data.docName}" sent — ${data.actionRequired}`, date: nowFull(), type: 'doc' };
       const clientToUpdate = clients.find(c => c.id === data.clientId);
       if (clientToUpdate) {
@@ -250,16 +216,14 @@ export function AppProvider({ children }) {
 
   const updateDocStatus = async (docId, status) => {
     try {
-      const response = await fetch(`/api/documents/${docId}`, {
+      const response = await authFetch(`/api/documents/${docId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status, updatedDate: now() }),
       });
       if (!response.ok) throw new Error('Failed to update document status');
       const updatedDoc = await response.json();
       setDocuments(prev => prev.map(d => (d.id === docId ? updatedDoc : d)));
 
-      // Update client's timeline
       const doc = documents.find(d => d.id === docId);
       if (doc) {
         const entry = { id: Date.now().toString(), text: `${doc.docType} "${doc.docName}" marked as ${status}`, date: nowFull(), type: 'doc' };
@@ -283,7 +247,7 @@ export function AppProvider({ children }) {
 
   const clearAllData = async () => {
     try {
-      const response = await fetch('/api/data', { method: 'DELETE' });
+      const response = await authFetch('/api/data', { method: 'DELETE' });
       if (!response.ok) throw new Error('Failed to clear data');
       setClients([]);
       setDocuments([]);
@@ -291,6 +255,64 @@ export function AppProvider({ children }) {
       setError(err);
       throw err;
     }
+  };
+
+  // ── PRODUCTS ──
+  const fetchProducts = async () => {
+    try {
+      const res = await authFetch('/api/products');
+      const data = await res.json();
+      setProducts(data.map(parseProduct));
+    } catch (err) {
+      setError(err);
+    }
+  };
+
+  const addProduct = async (data) => {
+    const res = await authFetch('/api/products', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to add product');
+    const product = await res.json();
+    setProducts(prev => [...prev, parseProduct(product)]);
+    return product;
+  };
+
+  const updateProduct = async (id, data) => {
+    const res = await authFetch(`/api/products/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to update product');
+    const product = await res.json();
+    setProducts(prev => prev.map(p => p.id === id ? parseProduct(product) : p));
+    return product;
+  };
+
+  const deleteProduct = async (id) => {
+    const res = await authFetch(`/api/products/${id}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Failed to delete product');
+    setProducts(prev => prev.filter(p => p.id !== id));
+  };
+
+  const getClientProducts = async (clientId) => {
+    const res = await authFetch(`/api/clients/${clientId}/products`);
+    return (await res.json()).map(parseProduct);
+  };
+
+  const addClientProducts = async (clientId, productIds) => {
+    const res = await authFetch(`/api/clients/${clientId}/products`, {
+      method: 'POST',
+      body: JSON.stringify({ productIds }),
+    });
+    if (!res.ok) throw new Error('Failed to add products to client');
+    return (await res.json()).map(parseProduct);
+  };
+
+  const removeClientProduct = async (clientId, productId) => {
+    const res = await authFetch(`/api/clients/${clientId}/products/${productId}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Failed to remove product from client');
   };
 
   // ── STATS ──
@@ -318,16 +340,18 @@ export function AppProvider({ children }) {
 
   return (
     <AppContext.Provider value={{
-      clients, documents, loading, error,
+      clients, documents, products, loading, error,
       addClient, updateClient, deleteClient,
       addNote, deleteNote, toggleDeliverable, addDeliverable,
       addDocument, updateDocStatus, getClientDocs,
       getStats, searchClients, nextInvoiceNumber,
-      clearAllData
+      clearAllData, authFetch,
+      addProduct, updateProduct, deleteProduct, fetchProducts,
+      getClientProducts, addClientProducts, removeClientProduct,
     }}>
       {loading ? (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', fontFamily: 'Montserrat, sans-serif', color: '#7B4F5E', fontSize: 13, letterSpacing: 2 }}>
-          Loading portal…
+          Loading portal...
         </div>
       ) : children}
     </AppContext.Provider>

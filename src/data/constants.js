@@ -1,11 +1,10 @@
-export const TIERS = [
-  { value: 'Ready 2 Roll', label: 'Essentials: Ready 2 Roll ($1,000)', class: 'tier-ess' },
-  { value: 'Get Loud', label: 'Essentials: Get Loud ($1,750)', class: 'tier-ess' },
-  { value: 'Marquis', label: 'Essentials: Marquis ($3,000)', class: 'tier-ess' },
-  { value: 'LinkedIn Voice Intensive', label: 'LinkedIn Voice Intensive ($1,500+)', class: 'tier-li' },
-  { value: 'Notable Amplify', label: 'Notable Amplify ($8,000+)', class: 'tier-amp' },
-  { value: 'Notable Amplify+ Ongoing', label: 'Notable Amplify+ Ongoing ($3–5k/mo)', class: 'tier-on' },
-];
+export const TIER_NAMES = ['Notable Essentials', 'Notable Amplify', 'Notable Amplify & Retainer'];
+
+export const TIER_CLASSES = {
+  'Notable Essentials': 'tier-ess',
+  'Notable Amplify': 'tier-amp',
+  'Notable Amplify & Retainer': 'tier-on',
+};
 
 export const STAGES = ['Lead', 'Discovery', 'Active', 'In Review', 'Complete'];
 
@@ -38,12 +37,17 @@ export function getInitials(firstName = '', lastName = '') {
 }
 
 export function getTierClass(tier) {
-  const found = TIERS.find(t => t.value === tier);
-  return found ? found.class : 'tier-ess';
+  if (!tier) return 'tier-ess';
+  for (const [name, cls] of Object.entries(TIER_CLASSES)) {
+    if (tier.toLowerCase().includes(name.toLowerCase()) || name.toLowerCase().includes(tier.toLowerCase())) {
+      return cls;
+    }
+  }
+  return 'tier-ess';
 }
 
 export function formatCurrency(val) {
-  if (!val) return '—';
+  if (!val) return '--';
   const n = parseInt((val || '').replace(/[^0-9]/g, ''));
   if (isNaN(n)) return val;
   return '$' + n.toLocaleString();

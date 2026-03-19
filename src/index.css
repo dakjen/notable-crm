@@ -784,6 +784,75 @@ td {
   gap: 14px;
 }
 
+/* ── LOGIN PAGE ── */
+.login-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: var(--nbk);
+  padding: 20px;
+}
+
+.login-card {
+  width: 380px;
+  max-width: 100%;
+  background: var(--white);
+}
+
+.login-brand {
+  background: var(--nbk);
+  padding: 28px 24px 22px;
+  border-bottom: 3px solid var(--cr);
+  text-align: center;
+}
+
+.login-brand-name {
+  font-family: 'Oswald', sans-serif;
+  font-size: 28px;
+  letter-spacing: 8px;
+  color: var(--white);
+  line-height: 1;
+}
+
+.login-brand-sub {
+  font-size: 10px;
+  color: var(--mauve);
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  margin-top: 4px;
+  font-style: italic;
+}
+
+.login-form {
+  padding: 24px;
+}
+
+.login-error {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #c0392b;
+  font-size: 11px;
+  padding: 8px 12px;
+  margin-bottom: 16px;
+}
+
+.login-btn {
+  width: 100%;
+  justify-content: center;
+  padding: 10px 16px;
+  margin-top: 8px;
+}
+
+.login-footer {
+  text-align: center;
+  padding: 14px;
+  border-top: 1px solid var(--soft);
+  font-size: 10px;
+  color: #aaa;
+  letter-spacing: 1px;
+}
+
 /* ── SCROLLBAR ── */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
