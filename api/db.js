@@ -5,14 +5,22 @@ require('dotenv').config({ path: path.resolve(__dirname, '../.env.local') });
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false,
+  },
+  max: 5,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
 });
 
 pool.on('error', (err) => {
   console.error('Unexpected error on idle client', err);
-  process.exit(-1);
 });
 
+let tablesInitialized = false;
+
 async function createTables() {
+  if (tablesInitialized) return;
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS clients (
@@ -92,10 +100,10 @@ async function createTables() {
       console.log('Default admin account created (admin@gobenotable.com / changeme123)');
     }
 
+    tablesInitialized = true;
     console.log('Tables created or already exist.');
   } catch (err) {
     console.error('Error creating tables:', err);
-    process.exit(-1);
   }
 }
 
