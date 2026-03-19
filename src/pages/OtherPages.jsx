@@ -336,12 +336,15 @@ export function Team() {
 
 // ── SETTINGS ─────────────────────────────────────────
 export function Settings() {
-  const { clients, documents } = useApp();
+  const { clients, documents, clearAllData } = useApp();
 
-  const handleClearData = () => {
+  const handleClearData = async () => {
     if (window.confirm('Clear ALL portal data? This cannot be undone.')) {
-      localStorage.removeItem('notable_portal_v1');
-      window.location.reload();
+      try {
+        await clearAllData();
+      } catch (err) {
+        alert('Failed to clear data. Please try again.');
+      }
     }
   };
 
@@ -370,9 +373,9 @@ export function Settings() {
           <div className="detail-card-title">Data</div>
           <div className="detail-row"><span className="detail-label">Clients stored</span><span>{clients.length}</span></div>
           <div className="detail-row"><span className="detail-label">Documents stored</span><span>{documents.length}</span></div>
-          <div className="detail-row"><span className="detail-label">Storage</span><span>localStorage (browser)</span></div>
+          <div className="detail-row"><span className="detail-label">Storage</span><span>Neon PostgreSQL</span></div>
           <div style={{ marginTop: 12, padding: '10px 12px', background: 'var(--cr-bg)', border: '1px solid var(--border)', fontSize: 11, color: 'var(--mauve)', lineHeight: 1.6 }}>
-            Data persists in your browser. Connect a backend (Supabase, Firebase) to sync across devices.
+            Data is stored in your Neon PostgreSQL database and syncs across all devices.
           </div>
           <button className="btn btn-ghost btn-sm" style={{ marginTop: 10, color: '#c0392b', borderColor: '#c0392b' }} onClick={handleClearData}>
             Clear All Data
@@ -381,14 +384,14 @@ export function Settings() {
         <div className="detail-card">
           <div className="detail-card-title">Phase 2 Roadmap</div>
           <div style={{ fontSize: 12, color: 'var(--dkgray)', lineHeight: 2 }}>
-            <div>☐ Backend database (Supabase)</div>
-            <div>☐ Client-facing portal with login</div>
-            <div>☐ E-signature integration</div>
-            <div>☐ Stripe payment processing</div>
-            <div>☐ Essentials package purchase flow</div>
-            <div>☐ Auto-generate proposals/invoices</div>
-            <div>☐ Team member accounts</div>
-            <div>☐ Email notifications</div>
+            <div style={{ color: '#1a6b3a' }}>&#x2611; Backend database (Neon PostgreSQL)</div>
+            <div>&#x2610; Client-facing portal with login</div>
+            <div>&#x2610; E-signature integration</div>
+            <div>&#x2610; Stripe payment processing</div>
+            <div>&#x2610; Essentials package purchase flow</div>
+            <div>&#x2610; Auto-generate proposals/invoices</div>
+            <div>&#x2610; Team member accounts</div>
+            <div>&#x2610; Email notifications</div>
           </div>
         </div>
       </div>

@@ -15,14 +15,22 @@ export default function AddClientModal({ onClose, onAdded }) {
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  const handleSubmit = () => {
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async () => {
     if (!form.firstName.trim() && !form.lastName.trim()) {
       setError('Please enter a client name.');
       return;
     }
-    const client = addClient(form);
-    onAdded && onAdded(client);
-    onClose();
+    setSaving(true);
+    try {
+      const client = await addClient(form);
+      onAdded && onAdded(client);
+      onClose();
+    } catch (err) {
+      setError('Failed to add client. Please try again.');
+      setSaving(false);
+    }
   };
 
   return (
@@ -32,7 +40,7 @@ export default function AddClientModal({ onClose, onAdded }) {
       footer={
         <>
           <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
-          <button className="btn btn-sm" onClick={handleSubmit}>Add Client →</button>
+          <button className="btn btn-sm" onClick={handleSubmit} disabled={saving}>{saving ? 'Adding…' : 'Add Client →'}</button>
         </>
       }
     >

@@ -15,11 +15,19 @@ export default function SendDocModal({ onClose, preselectedClientId }) {
   const [error, setError] = useState('');
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  const handleSubmit = () => {
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async () => {
     if (!form.clientId) { setError('Please select a client.'); return; }
     if (!form.docName.trim()) { setError('Please enter a document name.'); return; }
-    addDocument(form);
-    onClose();
+    setSaving(true);
+    try {
+      await addDocument(form);
+      onClose();
+    } catch (err) {
+      setError('Failed to send document. Please try again.');
+      setSaving(false);
+    }
   };
 
   return (
@@ -29,7 +37,7 @@ export default function SendDocModal({ onClose, preselectedClientId }) {
       footer={
         <>
           <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
-          <button className="btn btn-sm" onClick={handleSubmit}>Send Document →</button>
+          <button className="btn btn-sm" onClick={handleSubmit} disabled={saving}>{saving ? 'Sending…' : 'Send Document →'}</button>
         </>
       }
     >
